@@ -88,8 +88,6 @@ AbiApkPackaging.configure(project, SingleArtifact.APK.INSTANCE)
 dependencies {
     implementation fileTree(dir: "libs", include: ["*.aar"])
     implementation project(':catvod')
-    implementation project(':chaquo')
-    implementation project(':quickjs')
     implementation libs.appcompat
     implementation libs.lifecycle.service
     implementation libs.media
@@ -123,3 +121,5 @@ dependencies {
     annotationProcessor libs.glide.compiler
     coreLibraryDesugaring libs.desugar
 }
+
+apply from: 'live.gradle'

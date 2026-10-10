@@ -114,7 +114,10 @@ abstract class FinalizeApkWorkAction implements WorkAction<FinalizeApkParameters
         } finally {
             inputZip.close()
         }
-        if (!removedRequirements || !removedStdlib || removedNative == 0 || !keptRequirements || !keptStdlib || keptNative == 0) {
+        // fongmi-live：未打包 Chaquopy（Python 运行时）时没有任何 chaquopy 资源，属于正常情况；
+        // 只有「打包了但不完整」才报错。
+        def anyChaquopy = removedRequirements || removedStdlib || removedNative > 0 || keptRequirements || keptStdlib || keptNative > 0
+        if (anyChaquopy && (!removedRequirements || !removedStdlib || removedNative == 0 || !keptRequirements || !keptStdlib || keptNative == 0)) {
             throw new GradleException("Incomplete Chaquopy ABI assets for ${abi} in ${inputApk.name}")
         }
     }

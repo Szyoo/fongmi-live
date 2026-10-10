@@ -1,0 +1,72 @@
+// fongmi-live：直播专用版的构建定制。
+//
+// 所有本分支的构建改动都集中在这个文件里，app/build.gradle 只追加一行 apply from。
+// 这样上游改 build.gradle（尤其是每次发版都会改的 versionCode / versionName 那两行）时，
+// 我们的 rebase 不会和它冲突。
+
+android {
+    defaultConfig {
+        // 与官方 FongMi（com.fongmi.android.tv）区分开：可以共存，也不会被官方渠道误更新。
+        applicationIdSuffix ".live"
+    }
+}
+
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        // 版本号 = 上游 versionCode × 1000 + 本分支的 CI 构建序号。
+        // 上游升级（563 → 570）和本分支重新构建都会让版本号单调递增，
+        // App 内的自动更新据此判断是否有新版。
+        def build = (System.getenv('LIVE_BUILD_NUMBER') ?: '0') as int
+        variant.outputs.each { output ->
+            def code = output.versionCode.get()
+            def name = output.versionName.get()
+            output.versionCode.set(code * 1000 + build)
+            output.versionName.set("${name}-live.${build}")
+        }
+    }
+}
+
+android {
+    packaging {
+        jniLibs {
+            // mpv 引擎已移除（见 PlayerEngineFactory），不打包它的原生库以缩小 APK。
+            // mpvplayer 的 aar 仍留在编译路径上，因为 AudioEffectProcessor 用到其中纯 Java 的 AudioChannelMix。
+            excludes += ['**/libmpv.so', '**/libplayer.so']
+        }
+    }
+}
+
+// 垫片自动退场：src/main/java/androidx/media3/ 下的类是为作者尚未公开的 media3 改动写的垫片。
+// 一旦 FongMi/media 公开了同名类，app/libs 里的 aar 就会包含它；此时自动跳过对应垫片、
+// 改用真正的实现，避免 "Duplicate class" 构建失败。
+def mediaClasses = null
+def providedByAar = { String classPath ->
+    if (mediaClasses == null) {
+        mediaClasses = [] as Set
+        file('libs').listFiles()?.findAll { it.name.endsWith('.aar') }?.each { aar ->
+            new java.util.zip.ZipFile(aar).withCloseable { zip ->
+                def jar = zip.getEntry('classes.jar')
+                if (jar == null) return
+                new java.util.zip.ZipInputStream(zip.getInputStream(jar)).withCloseable { input ->
+                    def entry
+                    while ((entry = input.nextEntry) != null) {
+                        if (entry.name.endsWith('.class')) mediaClasses << entry.name
+                    }
+                }
+            }
+        }
+    }
+    return mediaClasses.contains(classPath)
+}
+
+tasks.withType(JavaCompile).configureEach { task ->
+    task.exclude { element ->
+        def path = element.file.path
+        def marker = '/src/main/java/'
+        if (element.isDirectory() || !path.contains(marker + 'androidx/media3/')) return false
+        def classPath = path.substring(path.indexOf(marker) + marker.length()).replace('.java', '.class')
+        if (!providedByAar(classPath)) return false
+        task.logger.lifecycle("fongmi-live: ${classPath} 已由 media3 提供，跳过垫片")
+        return true
+    }
+}
