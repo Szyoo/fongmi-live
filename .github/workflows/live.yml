@@ -1,0 +1,143 @@
+# fongmi-live：直播专用版的构建、发布与上游同步。
+#
+# - push 到 live：构建并发布。
+# - 每周定时：把 live rebase 到上游 FongMi/TV 最新代码；有更新则构建并发布。
+#   rebase 出现真实冲突时任务失败（GitHub 会邮件通知），需要人工处理。
+# - 手动触发：同步 + 强制构建发布。
+#
+# 发布物（GitHub Releases, latest）：
+#   leanback-armeabi_v7a.apk / leanback-arm64_v8a.apk  —— 电视按 CPU 位数自取
+#   leanback.json  {name, desc, code}                 —— App 内自动更新据此判断新版本
+#
+# 需要的仓库 Secrets：KEYSTORE_BASE64、KEYSTORE_PASSWORD、KEY_ALIAS
+name: live
+
+on:
+  push:
+    branches: [live]
+    paths-ignore: ['**.md']
+  schedule:
+    - cron: '0 18 * * 0'   # 每周一 03:00 JST
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: live
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.sync.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: live
+          fetch-depth: 0
+
+      - name: Rebase onto upstream FongMi/TV
+        id: sync
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          bash .github/scripts/sync-upstream.sh
+
+      - name: Push rebased live
+        if: steps.sync.outputs.changed == 'true'
+        run: git push --force-with-lease origin live
+
+  build:
+    needs: sync
+    # 由 GITHUB_TOKEN 推送的提交不会再触发工作流，所以同步后的构建在同一次运行里完成。
+    if: >-
+      always() && needs.sync.result != 'failure' && (
+        github.event_name == 'push' ||
+        github.event_name == 'workflow_dispatch' ||
+        needs.sync.outputs.changed == 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: live
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Android SDK
+        run: |
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKM" --licenses > /dev/null
+          "$SDKM" "platforms;android-37.0" "build-tools;37.0.0" > /dev/null
+
+      # 上游的播放器依赖作者魔改的 media3（FongMi/media 的 release-*-fongmi 分支），
+      # 其 AAR 不在 FongMi/TV 仓库里，需要自行编译；按 media 的提交缓存，未变化时不重编。
+      - name: Resolve FongMi/media
+        id: media
+        run: |
+          REPO=https://github.com/FongMi/media.git
+          BRANCH=$(git ls-remote --heads "$REPO" 'release-*-fongmi' | sed 's|.*refs/heads/||' | sort -V | tail -1)
+          SHA=$(git ls-remote "$REPO" "refs/heads/$BRANCH" | cut -f1)
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "media: $BRANCH @ $SHA"
+
+      - uses: actions/cache@v4
+        id: media-cache
+        with:
+          path: media-aars
+          key: media-${{ steps.media.outputs.sha }}-v1
+
+      - name: Build media3 AARs
+        if: steps.media-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch "${{ steps.media.outputs.branch }}" https://github.com/FongMi/media.git "$RUNNER_TEMP/media"
+          cd "$RUNNER_TEMP/media"
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          mapfile -t TASKS < <(sed -E 's/-release\.aar$//; s/^/:/; s/$/:assembleRelease/' move.txt)
+          bash ./gradlew "${TASKS[@]}" --no-daemon
+          mkdir -p "$GITHUB_WORKSPACE/media-aars"
+          while read -r aar; do
+            find libraries -name "$aar" -exec cp {} "$GITHUB_WORKSPACE/media-aars/" \;
+          done < move.txt
+          ls "$GITHUB_WORKSPACE/media-aars"
+
+      - name: Stage media3 AARs
+        run: cp media-aars/*.aar app/libs/
+
+      - name: Signing config
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          printf 'sdk.dir=%s\nstoreFile=%s\nkeyAlias=%s\nstorePassword=%s\n' \
+            "$ANDROID_HOME" "$RUNNER_TEMP/release.jks" "$KEY_ALIAS" "$KEYSTORE_PASSWORD" > local.properties
+
+      - name: Build APK
+        env:
+          LIVE_BUILD_NUMBER: ${{ github.run_number }}
+        run: bash ./gradlew :app:assembleLeanbackRelease --no-daemon
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MEDIA_SHA: ${{ steps.media.outputs.sha }}
+        run: |
+          OUT=app/build/outputs/apk/leanback/release
+          AAPT="$ANDROID_HOME/build-tools/37.0.0/aapt2"
+          BADGE=$("$AAPT" dump badging "$OUT/leanback-armeabi_v7a.apk" | head -1)
+          CODE=$(sed -E "s/.*versionCode='([0-9]+)'.*/\1/" <<< "$BADGE")
+          NAME=$(sed -E "s/.*versionName='([^']+)'.*/\1/" <<< "$BADGE")
+          DESC="live@$(git rev-parse --short HEAD) · media@${MEDIA_SHA:0:7}"
+          python3 -c 'import json,sys; print(json.dumps({"name": sys.argv[1], "desc": sys.argv[2], "code": int(sys.argv[3])}, ensure_ascii=False))' \
+            "$NAME" "$DESC" "$CODE" > "$OUT/leanback.json"
+          cat "$OUT/leanback.json"
+          gh release create "v$NAME" "$OUT"/leanback-*.apk "$OUT/leanback.json" \
+            --target "$(git rev-parse HEAD)" --title "$NAME" --notes "$DESC" --latest
