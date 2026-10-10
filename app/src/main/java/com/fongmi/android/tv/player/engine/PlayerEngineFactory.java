@@ -7,7 +7,6 @@ import androidx.media3.common.Player;
 
 import com.fongmi.android.tv.player.exo.ExoPlayerEngine;
 import com.fongmi.android.tv.player.media.PlaySpec;
-import com.fongmi.android.tv.player.mpv.MpvPlayerEngine;
 import com.fongmi.android.tv.setting.PlayerSetting;
 import com.fongmi.android.tv.utils.UrlUtil;
 
@@ -24,7 +23,8 @@ public final class PlayerEngineFactory {
     public static PlayerEngine create(int decode, PlayerEngine.Type type, Player.Listener listener) {
         return switch (type) {
             case EXO -> new ExoPlayerEngine(decode, listener);
-            case MPV -> new MpvPlayerEngine(decode, listener);
+            // fongmi-live：已移除 mpv 引擎（公开的 mpvplayer 版本落后于上游代码），一律使用 ExoPlayer。
+            case MPV -> new ExoPlayerEngine(decode, listener);
         };
     }
 
@@ -47,6 +47,6 @@ public final class PlayerEngineFactory {
     }
 
     private static boolean isMpvReady() {
-        return PlayerSetting.isMpv() && MpvPlayerEngine.isAvailable();
+        return false;
     }
 }

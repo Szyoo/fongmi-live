@@ -6,7 +6,6 @@ import androidx.annotation.Nullable;
 
 import com.fongmi.android.tv.server.Server;
 import com.fongmi.android.tv.utils.UrlUtil;
-import com.fongmi.hook.Hook;
 import com.github.catvod.net.OkHttp;
 import com.google.gson.Gson;
 import com.google.gson.annotations.SerializedName;
@@ -85,10 +84,6 @@ public class Core {
 
     public List<Option> getOption() {
         return option == null ? Collections.emptyList() : option;
-    }
-
-    public Hook getHook() {
-        return !getPkg().isEmpty() && !getSign().isEmpty() ? new Hook(getSign(), getPkg()) : null;
     }
 
     @Override

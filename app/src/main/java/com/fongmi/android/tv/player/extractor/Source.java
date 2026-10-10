@@ -24,12 +24,8 @@ public class Source {
 
     public Source() {
         extractors = new ArrayList<>();
-        extractors.add(new Force());
-        extractors.add(new JianPian());
         extractors.add(new Push());
         extractors.add(new Strm());
-        extractors.add(new Thunder());
-        extractors.add(new TVBus());
         extractors.add(new Video());
         extractors.add(new YouTube());
     }
@@ -44,10 +40,7 @@ public class Source {
 
     private void addCallable(Iterator<Episode> iterator, List<Callable<List<Episode>>> items) {
         String url = iterator.next().getUrl();
-        if (Thunder.Parser.match(url)) {
-            items.add(Thunder.Parser.get(url));
-            iterator.remove();
-        } else if (YouTube.Parser.match(url)) {
+        if (YouTube.Parser.match(url)) {
             items.add(YouTube.Parser.get(url));
             iterator.remove();
         }

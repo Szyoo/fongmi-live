@@ -3,7 +3,6 @@ package com.fongmi.android.tv;
 import android.app.Activity;
 import android.app.Application;
 import android.content.Context;
-import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -13,7 +12,6 @@ import androidx.annotation.Nullable;
 import androidx.core.os.HandlerCompat;
 
 import com.fongmi.android.tv.utils.Notify;
-import com.fongmi.hook.Hook;
 import com.github.catvod.Init;
 import com.google.gson.Gson;
 
@@ -26,7 +24,6 @@ public class App extends Application implements Application.ActivityLifecycleCal
     private final long time;
 
     private Activity activity;
-    private Hook hook;
 
     public App() {
         instance = this;
@@ -68,10 +65,6 @@ public class App extends Application implements Application.ActivityLifecycleCal
         for (Runnable r : runnable) get().handler.removeCallbacks(r);
     }
 
-    public void setHook(Hook hook) {
-        this.hook = hook;
-    }
-
     @Override
     protected void attachBaseContext(Context base) {
         super.attachBaseContext(base);
@@ -83,16 +76,6 @@ public class App extends Application implements Application.ActivityLifecycleCal
         super.onCreate();
         Notify.createChannel();
         registerActivityLifecycleCallbacks(this);
-    }
-
-    @Override
-    public PackageManager getPackageManager() {
-        return hook != null ? hook : getBaseContext().getPackageManager();
-    }
-
-    @Override
-    public String getPackageName() {
-        return hook != null ? hook.getPackageName() : getBaseContext().getPackageName();
     }
 
     @Override

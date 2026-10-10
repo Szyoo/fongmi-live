@@ -221,7 +221,6 @@ public class SettingActivity extends BaseActivity implements ConfigListener, Sit
     }
 
     private void onPlayer(View view) {
-        SettingPlayerActivity.start(this);
     }
 
     private void onDanmaku(View view) {
