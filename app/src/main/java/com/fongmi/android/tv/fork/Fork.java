@@ -3,6 +3,7 @@ package com.fongmi.android.tv.fork;
 import androidx.fragment.app.FragmentActivity;
 
 import com.fongmi.android.tv.Updater;
+import com.fongmi.android.tv.setting.Setting;
 
 /**
  * fongmi-live：本分支对上游代码的唯一挂载点。
@@ -18,6 +19,9 @@ public final class Fork {
 
     public static void onLiveCreate(FragmentActivity activity) {
         LiveDefault.ensure();
+        // 上游在更新对话框点「取消」后会永久关闭检查更新，重新开启的开关在设置页里——
+        // 而设置页在直播版中已被摘除。这里每次启动都重新开启，让「取消」只作用于本次。
+        Setting.putUpdate(true);
         Updater.create().start(activity);
     }
 }

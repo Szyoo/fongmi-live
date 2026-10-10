@@ -8,6 +8,10 @@ android {
     defaultConfig {
         // 与官方 FongMi（com.fongmi.android.tv）区分开：可以共存，也不会被官方渠道误更新。
         applicationIdSuffix ".live"
+
+        // 首次启动写入的默认频道源。可在构建时用 -PliveDefaultUrl=... 覆盖（例如本地测试）。
+        def liveDefaultUrl = project.findProperty('liveDefaultUrl') ?: 'https://raw.githubusercontent.com/Szyoo/fongmi-live/channels/live.m3u'
+        buildConfigField 'String', 'LIVE_DEFAULT_URL', "\"${liveDefaultUrl}\""
     }
 }
 
