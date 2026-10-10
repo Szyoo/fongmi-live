@@ -2,7 +2,7 @@
 
 基于 [FongMi/TV](https://github.com/FongMi/TV) 的 Android TV 直播专用分支。打开即直播，只保留看电视直播所需的功能。
 
-- 分支 `live`：本分支的全部改动，定期 rebase 到上游 `fongmi` 分支。
+- 分支 `live`：本分支的全部改动。**2026-10-10 起冻结**，不再定期跟进上游（见「维护」）。
 - 分支 `fongmi`：上游原样，仅作参照。
 - 发布：GitHub Releases（`latest`），App 内自动更新从这里拉取。
 
@@ -24,34 +24,33 @@
 
 首次启动时写入默认源（`fork/LiveDefault.java` 中的 `URL`），支持 m3u / txt 频道列表。
 
-换源：直播页控制栏「配置」按钮 → 输入地址，或用手机扫描对话框里的二维码在手机上输入后推送。
+换源：直播页控制栏「配置」按钮 → 输入地址，或用手机扫描对话框里的二维码在手机## 构建
 
-## 构建
+上游的播放器依赖作者魔改的 media3（[FongMi/media](https://github.com/FongMi/media) 的 `release-1.11.0-fongmi` 分支），其 AAR 不在 FongMi/TV 仓库中。本分支把冻结时编好的 20 个 AAR 存在自己仓库的预发布 Release 里：
 
-上游的播放器依赖作者魔改的 media3（[FongMi/media](https://github.com/FongMi/media) 的 `release-*-fongmi` 分支），其 AAR 不在本仓库中，需先编译：
+- Release `media3-3c2cbe8`，资产 `media3-aars-3c2cbe8.zip`（内含 `SOURCE.txt`、`SHA256SUMS`）
+- 来源 FongMi/media @ `3c2cbe8ac742c2fe15eff52f03eeb3b1b648848d`
 
-```bash
-git clone --depth 1 --branch release-1.11.0-fongmi https://github.com/FongMi/media.git ../fongmi-media
-cd ../fongmi-media && echo "sdk.dir=$ANDROID_HOME" > local.properties
-# 编译 move.txt 中列出的 20 个模块，再把 lib-*-release.aar 拷到本仓库 app/libs/
-```
-
-然后在本仓库根目录写 `local.properties`（`sdk.dir`、`storeFile`、`keyAlias`、`storePassword`），执行：
+本地构建：
 
 ```bash
+gh release download media3-3c2cbe8 -R Szyoo/fongmi-live -p media3-aars-3c2cbe8.zip
+unzip media3-aars-3c2cbe8.zip && cp media3-aars/lib-*.aar app/libs/
+# 根目录 local.properties：sdk.dir、storeFile、keyAlias、storePassword
 bash ./gradlew :app:assembleLeanbackRelease
 ```
 
-产物：`app/build/outputs/apk/leanback/release/leanback-{armeabi_v7a,arm64_v8a}.apk`。
+产物：`app/build/outputs/apk/leanback/release/leanback-{armeabi_v7a,arm64_v8a}.apk`。需要 JDK 21、Android SDK（platform 37、build-tools 37.0.0）。
 
-需要 JDK 21、Android SDK（platform 37、build-tools 37.0.0）；首次编译 media3 会自动安装 NDK。CI 的完整流程见 `.github/workflows/live.yml`。
+**重新生成 media3 包**（仅在决定升级播放器时）：克隆 FongMi/media 对应分支，写 `local.properties`（`sdk.dir`），编译 `move.txt` 列出的模块（`:lib-xxx:assembleRelease`，首次会自动装 NDK），把 `lib-*-release.aar` 连同 `SOURCE.txt`、`SHA256SUMS` 打包，发布为新的预发布 Release，再更新 `.github/workflows/live.yml` 里的 `MEDIA3_TAG` / `MEDIA3_ZIP` / `MEDIA3_SHA256`。
+
+e.yml`。
 
 ## 维护
 
-**同步上游**：`.github/workflows/live.yml` 每周一 03:00 JST 运行 `.github/scripts/sync-upstream.sh`，把 `live` rebase 到上游最新代码。
+**为什么冻结**：统计 2026-04 至 2026-10 上游 248 个提交，56% 与直播无关（点播、界面、网站），真正对直播有用的修复约 8~10 个；而十余次大规模重构是 rebase 冲突的主要来源，2026-08-27 的重构还引入了作者未公开的 media3 依赖。对直播专用版来说，持续跟进的代价远大于收益。
 
-- 上游修改了本分支删除的文件 → 自动保持删除并继续。
-- 其他任何冲突 → 任务失败（GitHub 邮件通知），需人工 rebase。
+**挑选上游修复**：需要上游某个具体修复时，优先 `git cherry-pick`；确实需要整体跟进时，手动触发 Actions 的 `live` 工作流并勾选 `sync_upstream`，它会运行 `.github/scripts/sync-upstream.sh`（"我们删除 / 上游修改"的冲突自动保持删除，其余冲突失败退出）。
 
 **改动设计**：为降低 rebase 冲突，本分支尽量用新文件实现功能，少改上游文件：
 

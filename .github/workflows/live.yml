@@ -1,9 +1,12 @@
-# fongmi-live：直播专用版的构建、发布与上游同步。
+# fongmi-live：直播专用版的构建与发布。
 #
+# 本分支已冻结（2026-10-10）：不再定期跟进上游 FongMi/TV。
 # - push 到 live：构建并发布。
-# - 每周定时：把 live rebase 到上游 FongMi/TV 最新代码；有更新则构建并发布。
-#   rebase 出现真实冲突时任务失败（GitHub 会邮件通知），需要人工处理。
-# - 手动触发：同步 + 强制构建发布。
+# - 手动触发：构建并发布；勾选 sync_upstream 时先尝试 rebase 到上游最新代码
+#   （仅在需要挑选上游某个修复时使用，rebase 出现真实冲突会失败）。
+#
+# 播放器依赖的 FongMi 魔改 media3 已预先编译，存放在本仓库的预发布 Release
+# （MEDIA3_TAG）里，构建时下载并校验，不依赖上游仓库是否继续存在。
 #
 # 发布物（GitHub Releases, latest）：
 #   leanback-armeabi_v7a.apk / leanback-arm64_v8a.apk  —— 电视按 CPU 位数自取
@@ -16,9 +19,12 @@ on:
   push:
     branches: [live]
     paths-ignore: ['**.md']
-  schedule:
-    - cron: '0 18 * * 0'   # 每周一 03:00 JST
   workflow_dispatch:
+    inputs:
+      sync_upstream:
+        description: 先 rebase 到上游 FongMi/TV 最新代码
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -27,9 +33,14 @@ concurrency:
   group: live
   cancel-in-progress: false
 
+env:
+  MEDIA3_TAG: media3-3c2cbe8
+  MEDIA3_ZIP: media3-aars-3c2cbe8.zip
+  MEDIA3_SHA256: 3dd929216f0f7482bacae6053f08e7ce7d5be75b086b6aaa16cf799d8bb21ccb
+
 jobs:
   sync:
-    if: github.event_name != 'push'
+    if: github.event_name == 'workflow_dispatch' && inputs.sync_upstream
     runs-on: ubuntu-latest
     outputs:
       changed: ${{ steps.sync.outputs.changed }}
@@ -52,12 +63,9 @@ jobs:
 
   build:
     needs: sync
+    # sync 未运行（skipped）时照常构建；sync 失败（真实冲突）时不构建。
     # 由 GITHUB_TOKEN 推送的提交不会再触发工作流，所以同步后的构建在同一次运行里完成。
-    if: >-
-      always() && needs.sync.result != 'failure' && (
-        github.event_name == 'push' ||
-        github.event_name == 'workflow_dispatch' ||
-        needs.sync.outputs.changed == 'true')
+    if: always() && needs.sync.result != 'failure'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -75,40 +83,15 @@ jobs:
           yes | "$SDKM" --licenses > /dev/null
           "$SDKM" "platforms;android-37.0" "build-tools;37.0.0" > /dev/null
 
-      # 上游的播放器依赖作者魔改的 media3（FongMi/media 的 release-*-fongmi 分支），
-      # 其 AAR 不在 FongMi/TV 仓库里，需要自行编译；按 media 的提交缓存，未变化时不重编。
-      - name: Resolve FongMi/media
-        id: media
+      - name: Fetch pinned media3 AARs
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          REPO=https://github.com/FongMi/media.git
-          BRANCH=$(git ls-remote --heads "$REPO" 'release-*-fongmi' | sed 's|.*refs/heads/||' | sort -V | tail -1)
-          SHA=$(git ls-remote "$REPO" "refs/heads/$BRANCH" | cut -f1)
-          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
-          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
-          echo "media: $BRANCH @ $SHA"
-
-      - uses: actions/cache@v4
-        id: media-cache
-        with:
-          path: media-aars
-          key: media-${{ steps.media.outputs.sha }}-v1
-
-      - name: Build media3 AARs
-        if: steps.media-cache.outputs.cache-hit != 'true'
-        run: |
-          git clone --depth 1 --branch "${{ steps.media.outputs.branch }}" https://github.com/FongMi/media.git "$RUNNER_TEMP/media"
-          cd "$RUNNER_TEMP/media"
-          echo "sdk.dir=$ANDROID_HOME" > local.properties
-          mapfile -t TASKS < <(sed -E 's/-release\.aar$//; s/^/:/; s/$/:assembleRelease/' move.txt)
-          bash ./gradlew "${TASKS[@]}" --no-daemon
-          mkdir -p "$GITHUB_WORKSPACE/media-aars"
-          while read -r aar; do
-            find libraries -name "$aar" -exec cp {} "$GITHUB_WORKSPACE/media-aars/" \;
-          done < move.txt
-          ls "$GITHUB_WORKSPACE/media-aars"
-
-      - name: Stage media3 AARs
-        run: cp media-aars/*.aar app/libs/
+          gh release download "$MEDIA3_TAG" -p "$MEDIA3_ZIP" -D "$RUNNER_TEMP"
+          echo "$MEDIA3_SHA256  $RUNNER_TEMP/$MEDIA3_ZIP" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/$MEDIA3_ZIP" -d "$RUNNER_TEMP"
+          (cd "$RUNNER_TEMP/media3-aars" && sha256sum -c SHA256SUMS)
+          cp "$RUNNER_TEMP"/media3-aars/lib-*.aar app/libs/
 
       - name: Signing config
         env:
@@ -128,14 +111,13 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
-          MEDIA_SHA: ${{ steps.media.outputs.sha }}
         run: |
           OUT=app/build/outputs/apk/leanback/release
           AAPT="$ANDROID_HOME/build-tools/37.0.0/aapt2"
           BADGE=$("$AAPT" dump badging "$OUT/leanback-armeabi_v7a.apk" | head -1)
           CODE=$(sed -E "s/.*versionCode='([0-9]+)'.*/\1/" <<< "$BADGE")
           NAME=$(sed -E "s/.*versionName='([^']+)'.*/\1/" <<< "$BADGE")
-          DESC="live@$(git rev-parse --short HEAD) · media@${MEDIA_SHA:0:7}"
+          DESC="live@$(git rev-parse --short HEAD) · ${MEDIA3_TAG}"
           python3 -c 'import json,sys; print(json.dumps({"name": sys.argv[1], "desc": sys.argv[2], "code": int(sys.argv[3])}, ensure_ascii=False))' \
             "$NAME" "$DESC" "$CODE" > "$OUT/leanback.json"
           cat "$OUT/leanback.json"
