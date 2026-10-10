@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  fongmi-live：直播专用版的清单覆盖层。
+
+  这个文件只存在于我们的分支，上游永远不会修改它，所以不会产生 rebase 冲突。
+  它在清单合并里优先级最高（变体 > 构建类型 > 风味 > main），用来：
+    1. 把 LiveActivity 设为开机入口，打开即直播；
+    2. 摘除点播、搜索、投屏、设置、文件、开机自启等一切非直播组件
+       —— 没有入口可达后，R8 会把它们的代码从 APK 中剥离；
+    3. 摘除直播用不到的权限。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.RECORD_AUDIO" tools:node="remove" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" tools:node="remove" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:node="remove" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" tools:node="remove" />
+
+    <application>
+
+        <activity
+            android:name=".ui.activity.LiveActivity"
+            tools:remove="android:parentActivityName">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity android:name=".ui.activity.HomeActivity" tools:node="remove" />
+        <activity android:name=".ui.activity.CastActivity" tools:node="remove" />
+        <activity android:name=".ui.activity.VodActivity" tools:node="remove" />
+        <activity android:name=".ui.activity.VideoActivity" tools:node="remove" />
+        <activity android:name=".ui.activity.KeepActivity" tools:node="remove" />
+        <activity android:name=".ui.activity.PushActivity" tools:node="remove" />
+        <activity android:name=".ui.activity.SearchActivity" tools:node="remove" />
+        <activity android:name=".ui.activity.CollectActivity" tools:node="remove" />
+        <activity android:name=".ui.activity.FileActivity" tools:node="remove" />
+        <activity android:name=".ui.activity.SettingActivity" tools:node="remove" />
+        <activity android:name=".ui.activity.SettingPlayerActivity" tools:node="remove" />
+        <activity android:name=".ui.activity.SettingDecodeActivity" tools:node="remove" />
+        <activity android:name=".ui.activity.SettingPreloadActivity" tools:node="remove" />
+        <activity android:name=".ui.activity.SettingDanmakuActivity" tools:node="remove" />
+
+        <service android:name=".service.DLNARendererService" tools:node="remove" />
+        <receiver android:name=".receiver.BootReceiver" tools:node="remove" />
+
+    </application>
+</manifest>

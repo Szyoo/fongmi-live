@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- fongmi-live：桌面显示名，与官方版（影视）区分。 -->
+<resources>
+    <string name="app_name">直播</string>
+</resources>

@@ -36,6 +36,7 @@ import com.fongmi.android.tv.bean.Live;
 import com.fongmi.android.tv.bean.Result;
 import com.fongmi.android.tv.databinding.ActivityLiveBinding;
 import com.fongmi.android.tv.event.RefreshEvent;
+import com.fongmi.android.tv.fork.Fork;
 import com.fongmi.android.tv.impl.Callback;
 import com.fongmi.android.tv.impl.ConfigListener;
 import com.fongmi.android.tv.impl.CustomTarget;
@@ -57,6 +58,7 @@ import com.fongmi.android.tv.ui.adapter.EpgDataAdapter;
 import com.fongmi.android.tv.ui.adapter.GroupAdapter;
 import com.fongmi.android.tv.ui.custom.CustomKeyDownLive;
 import com.fongmi.android.tv.ui.custom.CustomLiveListView;
+import com.fongmi.android.tv.ui.dialog.ConfigDialog;
 import com.fongmi.android.tv.ui.dialog.HistoryDialog;
 import com.fongmi.android.tv.ui.dialog.LiveDialog;
 import com.fongmi.android.tv.ui.dialog.PassDialog;
@@ -165,6 +167,7 @@ public class LiveActivity extends PlaybackActivity implements GroupAdapter.OnCli
         setRecyclerView();
         setVideoView();
         setViewModel();
+        Fork.onLiveCreate(this);
         checkLive();
     }
 
@@ -400,7 +403,7 @@ public class LiveActivity extends PlaybackActivity implements GroupAdapter.OnCli
     }
 
     private void onConfig() {
-        HistoryDialog.create().live().readOnly().show(this);
+        ConfigDialog.create().live().show(this);
         hideControl();
     }
 
@@ -1049,7 +1052,6 @@ public class LiveActivity extends PlaybackActivity implements GroupAdapter.OnCli
         } else if (isVisible(mBinding.recycler)) {
             hideUI();
         } else {
-            if (isTaskRoot()) startActivity(new Intent(this, HomeActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP));
             super.onBackInvoked();
         }
     }
